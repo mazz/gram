@@ -120,11 +120,6 @@ class Main(object):
 
         print('Main {}'.format(args.command))
 
-        # loop = asyncio.get_event_loop()
-        # k_telegram_client = telegram_client()
-        # loop.run_until_complete(k_telegram_client)
-
-        # if k_telegram_client is not None:
         if args.command == 'members':
             members = TelegramMembers()
             loop = asyncio.get_event_loop()
@@ -149,75 +144,6 @@ class Main(object):
             print('Unrecognized command')
             parser.print_help()
             exit(1)
-        # else:
-        #     print('could not initialize telegram client')
-        #     exit(1)
-
-def walk_folder(media_dir, file_extension, modified_since=None):
-    # print('walk_folder media_dir: {}'.format(repr(media_dir)))
-    # print('walk_folder modified_since: {}'.format(repr(modified_since)))
-    # print('os.path.abspath(f): {}'.format(repr(os.path.abspath(media_dir))))
-    all_file_paths = get_filepaths(os.path.abspath(media_dir))
-    ts_paths = []
-    for f in all_file_paths:
-
-        if f.endswith('.{}'.format(file_extension)):
-            if modified_since is None:
-                ts_paths.append(f)
-                # print('output_name: {}'.format(f))
-                basename = os.path.basename(f)
-                # print('basename: {}'.format(basename))
-            else:
-                modtime = os.path.getmtime(f)
-                # print('modtime: {}'.format(modtime))
-                # print('modified_since.timestamp(): {}'.format(modified_since.timestamp()))
-                if modtime > modified_since.timestamp():
-                    # print('file new enough to be appended: {}'.format(modtime))
-                    ts_paths.append(f)
-                    basename = os.path.basename(f)
-
-    return sorted(ts_paths, key=lambda i: os.path.splitext(os.path.basename(i))[0])
-
-def get_filepaths(directory):
-    """
-    This function will generate the file names in a directory
-    tree by walking the tree either top-down or bottom-up. For each
-    directory in the tree rooted at directory top (including top itself),
-    it yields a 3-tuple (dirpath, dirnames, filenames).
-    """
-    file_paths = []  # List which will store all of the full filepaths.
-
-    # Walk the tree.
-    for root, directories, files in os.walk(directory):
-        for filename in files:
-            # Join the two strings in order to form the full filepath.
-            filepath = os.path.join(root, filename)
-            file_paths.append(filepath)  # Add it to the list.
-
-    return file_paths # Self-explanatory.
-
-def sanitize_filename(filepath):
-
-    numbername = filepath.replace('#', 'Number_')
-    percentname = numbername.replace('%', '_Percent')
-
-    if percentname != filepath:
-        os.rename(filepath, percentname)
-        print('sanitized: {}'.format(percentname))
-        return percentname
-    else:
-        return filepath
-
-def build_options(filepath, options):
-    components = filepath.split("/")
-    filename = components[-1]
-    folder_name = components[-2]
-    options['filepath'] = filepath
-    options['filename'] = filename
-    options['folder_name'] = folder_name
-
-    return copy.deepcopy(options)
-from pathlib import Path
 
 class TelegramListener(object):
     def __init__(self):
