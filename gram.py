@@ -206,7 +206,7 @@ class TelegramListener(object):
         print('destination_channel {}'.format(destination_channel.to_dict()))
 
         # initiate listening
-        listening_client = await telegram_forwarding_client('session_listener-{}'.format(source_channel.username), source_channel.username, 'objaaron', 'bandict.json')
+        listening_client = await telegram_forwarding_client('session_listener-{}'.format(source_channel.username), source_channel.username, destination_channel.username, 'bandict.json')
 
 class TelegramMessages(object):
     def __init__(self):
