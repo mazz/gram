@@ -66,7 +66,13 @@ async def telegram_client(session_name) -> TelegramClient:
 
     return client
 
-async def telegram_forwarding_client(session_name, source_channel_name, destination_channel_name):
+async def telegram_forwarding_client(
+    session_name,
+    source_channel_name,
+    destination_channel_name,
+    filterpathjson=None
+    ):
+    print('filterpathjson: {}'.format(filterpathjson))
     config = configparser.ConfigParser()
     config.read("config.ini")
 
@@ -85,9 +91,23 @@ async def telegram_forwarding_client(session_name, source_channel_name, destinat
     @client.on(events.NewMessage(chats=(source_channel_name)))
     async def normal_handler(event):
         print(event.message.to_dict())
-        # Within the client:
-        await client.forward_messages(destination_channel_name, messages=event.message)
-    
+        print('event.message.from_id.user_id: {}'.format(event.message.from_id.user_id))
+        if filterpathjson is not None:
+            ## filter-out messages based on banned users
+            bandict = {}
+            try:
+                with open(filterpathjson) as json_file:
+                    bandict = json.load(json_file)
+            except OSError as e:
+                print(e.errno)
+
+            if bandict.get(str(event.message.from_id.user_id)) is None:
+                await client.forward_messages(destination_channel_name, messages=event.message)
+            else:
+                print('found spammer: {}'.format(event.message.from_id.user_id))
+        else:
+            print('')
+            await client.forward_messages(destination_channel_name, messages=event.message)
     await client.start()
 
     # Ensure you're authorized
@@ -186,7 +206,7 @@ class TelegramListener(object):
         print('destination_channel {}'.format(destination_channel.to_dict()))
 
         # initiate listening
-        listening_client = await telegram_forwarding_client('session_listener-{}'.format(source_channel.username), source_channel.username, 'objaaron')
+        listening_client = await telegram_forwarding_client('session_listener-{}'.format(source_channel.username), source_channel.username, 'objaaron', 'bandict.json')
 
 class TelegramMessages(object):
     def __init__(self):
@@ -272,7 +292,7 @@ class TelegramMembers(object):
         parser.add_argument('--ban-from-channel', dest='ban_from_channel', help='permanently ban this id from channel')
         parser.add_argument('--json-output', dest='json_output', action='store_true', help='save members to json file')
         parser.add_argument('--add-to-channel-url', dest='add_to_channel_url', help='add members to this channel')
-        parser.add_argument('--ban-filter', dest='ban_filter', help='add to local banlist filter')
+        parser.add_argument('--ban-filter-user-id', dest='ban_filter_user_id', help='add telegram user id to local banlist filter')
         parser.set_defaults(dry_run=False)
         args = parser.parse_args(sys.argv[2:])
         print('Running TelegramMembers.start, args: {}'.format(repr(args)))
@@ -281,8 +301,8 @@ class TelegramMembers(object):
             members = await self.channel_members(args.channel_url)
             await self.json_out_participants(members, args.channel_url)
 
-        if args.ban_filter is not None:
-            await self.add_to_banlist(args.ban_filter)
+        if args.ban_filter_user_id is not None:
+            await self.add_to_banlist(args.ban_filter_user_id)
         else:
             if args.channel_url is None:
                 print("--channel-url is not specified")
@@ -341,8 +361,8 @@ class TelegramMembers(object):
         with open('{}-users.json'.format(channel_name), 'w') as outfile:
             json.dump(all_user_details, outfile, indent=4, sort_keys=True, default=str)
 
-    async def add_to_banlist(self, username):
-        print('add_to_banlist {}'.format(username))
+    async def add_to_banlist(self, telegram_user_id):
+        print('add_to_banlist {}'.format(telegram_user_id))
 
         ## open bandict
         bandict = {}
@@ -353,7 +373,7 @@ class TelegramMembers(object):
             print(e.errno)
 
         ## add to bandict
-        bandict['{}'.format(username)] = {'username': username}
+        bandict['{}'.format(telegram_user_id)] = {'id': telegram_user_id}
         try:
             with open('bandict.json', 'w+') as bandict_json:
                 json.dump(bandict, bandict_json, indent=4, sort_keys=True, default=str)
