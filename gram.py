@@ -38,6 +38,35 @@ def get_all_values(d):
     else:
         yield d 
 
+
+async def channel_members_f(channel_url):
+    print('channel_url {}'.format(channel_url))
+
+    client = await telegram_client('session_beta')
+    my_channel = await client.get_entity(channel_url)
+    print('my_channel: {}'.format(my_channel))
+
+    offset = 0
+    limit = 100
+    all_participants = []
+    index = 0
+
+    while True:
+        participants = await client(GetParticipantsRequest(
+            my_channel, ChannelParticipantsSearch(''), offset, limit,
+            hash=0
+        ))
+
+        if not participants.users:
+            break
+        
+        all_participants.extend(participants.users)
+        print('user len: {}'.format(len(participants.users)))
+        offset += len(participants.users)
+        index += 1
+
+    return all_participants
+
 async def telegram_client(session_name) -> TelegramClient:
     config = configparser.ConfigParser()
     config.read("config.ini")
@@ -70,9 +99,8 @@ async def telegram_forwarding_client(
     session_name,
     source_channel_name,
     destination_channel_name,
-    filterpathjson=None
+    whitelist=None
     ):
-    print('filterpathjson: {}'.format(filterpathjson))
     config = configparser.ConfigParser()
     config.read("config.ini")
 
@@ -92,21 +120,20 @@ async def telegram_forwarding_client(
     async def normal_handler(event):
         print(event.message.to_dict())
         print('event.message.from_id.user_id: {}'.format(event.message.from_id.user_id))
-        if filterpathjson is not None:
-            ## filter-out messages based on banned users
-            bandict = {}
-            try:
-                with open(filterpathjson) as json_file:
-                    bandict = json.load(json_file)
-            except OSError as e:
-                print(e.errno)
-
-            if bandict.get(str(event.message.from_id.user_id)) is None:
+        if whitelist is not None:
+            ## filter-out messages based on whitelist
+            found = next((member for member in whitelist if member.id == event.message.from_id.user_id), None)
+            if found is not None:
+                print('found in whitelist: {}'.format(event.message.from_id.user_id))
                 await client.forward_messages(destination_channel_name, messages=event.message)
             else:
-                print('found spammer: {}'.format(event.message.from_id.user_id))
+                print('possible spam. message sender not found in whitelist: {}'.format(event.message.from_id.user_id))
+
+                ## send reminder about moderated channel about 50% of the time
+                if (random.uniform(0, 1)) < 0.5:
+                    await client.send_message(entity=source_channel_name, message='Friendly reminder that a moderated channel can be found at: https://t.me/{}'.format(destination_channel_name))
         else:
-            print('')
+            print('no whitelist, just forward this message')
             await client.forward_messages(destination_channel_name, messages=event.message)
     await client.start()
 
@@ -203,10 +230,16 @@ class TelegramListener(object):
         print('source_channel {}'.format(source_channel.to_dict()))
 
         destination_channel = await client.get_entity(destination_channel_url)
+        members = await channel_members_f(destination_channel_url)
         print('destination_channel {}'.format(destination_channel.to_dict()))
 
         # initiate listening
-        listening_client = await telegram_forwarding_client('session_listener-{}'.format(source_channel.username), source_channel.username, destination_channel.username, 'bandict.json')
+        listening_client = await telegram_forwarding_client(
+            'session_listener-{}'.format(source_channel.username), 
+            source_channel.username, 
+            destination_channel.username, 
+            members
+            )
 
 class TelegramMessages(object):
     def __init__(self):
@@ -231,7 +264,7 @@ class TelegramMessages(object):
             exit()
 
         if args.json_output is True:
-            members = await self.channel_members(args.channel_url)
+            members = await channel_members_f(args.channel_url)
             await self.json_out_participants(members, args.channel_url)
 
         if args.add_messages_to_channel_url is not None:
@@ -298,7 +331,7 @@ class TelegramMembers(object):
         print('Running TelegramMembers.start, args: {}'.format(repr(args)))
 
         if args.json_output is True:
-            members = await self.channel_members(args.channel_url)
+            members = await channel_members_f(args.channel_url)
             await self.json_out_participants(members, args.channel_url)
 
         if args.ban_filter_user_id is not None:
@@ -312,39 +345,10 @@ class TelegramMembers(object):
                 await self.ban_from_channel(args.channel_url, args.ban_from_channel)
 
             if args.channel_url is not None and args.add_to_channel_url is None:
-                await self.channel_members(args.channel_url)
+                await channel_members_f(args.channel_url)
 
             if args.channel_url is not None and args.add_to_channel_url is not None:
                 await self.add_to_channel(args.channel_url, args.add_to_channel_url)
-
-    async def channel_members(self, channel_url):
-        print('channel_url {}'.format(channel_url))
-
-        client = await telegram_client('session_beta')
-        my_channel = await client.get_entity(channel_url)
-        print('my_channel: {}'.format(my_channel))
-
-        offset = 0
-        limit = 100
-        all_participants = []
-        index = 0
-
-        while True:
-            participants = await client(GetParticipantsRequest(
-                my_channel, ChannelParticipantsSearch(''), offset, limit,
-                hash=0
-            ))
-
-            if not participants.users:
-                break
-            
-            print('participants: {}'.format(participants))
-            all_participants.extend(participants.users)
-            print('user len: {}'.format(len(participants.users)))
-            offset += len(participants.users)
-            index += 1
-
-        return all_participants
 
     async def json_out_participants(self, participants, channel_url):
         channel_name = channel_url.split('/')[-1]
@@ -382,7 +386,7 @@ class TelegramMembers(object):
 
     async def add_to_channel(self, source_channel_url, add_to_channel_url):
         print('add_to_channel_url {}'.format(add_to_channel_url))
-        members = await self.channel_members(source_channel_url)
+        members = await channel_members_f(source_channel_url)
         # chunked = self.chunks(members, 50)
 
         # for i in chunked:
